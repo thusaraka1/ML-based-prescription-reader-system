@@ -1,0 +1,24 @@
+{
+  "name": "careconnect-api",
+  "version": "1.0.0",
+  "description": "Express.js backend API for CareConnect — MySQL + Firebase Admin",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "db:setup": "node setup_db.js",
+    "db:seed": "node setup_db.js",
+    "caretakers:reset:dry": "node reset_caretakers.js --dry-run",
+    "caretakers:reset": "node reset_caretakers.js --confirm",
+    "caretakers:reset:dry:firebase": "node reset_caretakers.js --dry-run --with-firebase",
+    "caretakers:reset:firebase": "node reset_caretakers.js --confirm --with-firebase"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.2",
+    "mysql2": "^3.12.0"
+  }
+}
