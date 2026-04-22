@@ -36,7 +36,7 @@ CareConnect is built using a decoupled, modular, microservice-inspired architect
   - TensorFlow.js Speech Commands for vocal tone analysis.
 - **Prescription Reader (The Ensemble Model):**
   - **Primary Model:** Custom Fine-tuned **Donut Model** (Swin Transformer Encoder + BART Decoder) via Python FastAPI. Trained specifically for reading handwritten text.
-  - **Auxiliary Models:** Cloud-based **Gemini AI** for extremely complex/multi-page parsing, and **ONNX CRNN OCR** as a fast client-side fallback.
+  - **Auxiliary Models:** Cloud-based **Gemini AI** for extremely complex/multi-page parsing, and **ONNX CRNN OCR** and the **CRNN** as a fast client-side helper ai.
 
 #### Backend System Engine
 - **Framework:** Node.js with Express.js REST API.
