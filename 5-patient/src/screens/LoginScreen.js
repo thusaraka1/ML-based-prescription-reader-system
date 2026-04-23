@@ -23,8 +23,8 @@ const LoginScreen = ({ navigation }) => {
       
       const token = await user.getIdToken();
       
-      // We use the local Wi-Fi IP address of the Remote PC
-      const response = await fetch(`http://192.168.8.194:3001/api/users/${user.uid}`, {
+      // We use the secure Cloudflare tunnel to hit the backend
+      const response = await fetch(`https://api.careconnect.website/api/users/${user.uid}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       

@@ -25,8 +25,8 @@ const LoginScreen = ({ navigation }) => {
       // 2. Get JWT token
       const token = await user.getIdToken();
 
-      // 3. Verify role with backend securely via local Wi-Fi
-      const apiUrl = 'http://192.168.8.194:3001/api';
+      // 3. Verify role with backend securely via Cloudflare
+      const apiUrl = 'https://api.careconnect.website/api';
       const userRes = await fetch(`${apiUrl}/users/${user.uid}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
