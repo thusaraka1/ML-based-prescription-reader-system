@@ -20,8 +20,8 @@ const RegisterScreen = ({ navigation }) => {
 
   React.useEffect(() => {
     // Fetch caretakers from the Express API (4-system-engine)
-    // We use localhost because we ran adb reverse tcp:3001 tcp:3001 for USB debugging
-    fetch('http://localhost:3001/api/caretakers')
+    // We use the local Wi-Fi IP address of the Remote PC
+    fetch('http://192.168.8.194:3001/api/caretakers')
       .then(res => res.json())
       .then(data => {
         setCaretakerList(data);
@@ -57,8 +57,8 @@ const RegisterScreen = ({ navigation }) => {
       await updateProfile(user, { displayName: name.trim() });
       const token = await user.getIdToken();
 
-      // We use localhost because of the adb reverse tunnel
-      const apiUrl = 'http://localhost:3001/api';
+      // We use the local Wi-Fi IP address of the Remote PC
+      const apiUrl = 'http://192.168.8.194:3001/api';
       
       // Generate Resident ID if not provided
       const finalResidentId = residentId?.trim() || `R-${user.uid.slice(0, 8).toUpperCase()}`;
