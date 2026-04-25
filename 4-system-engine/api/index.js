@@ -24,6 +24,7 @@ import appointmentsRoutes from './routes/appointments.js';
 import emotionsRoutes from './routes/emotions.js';
 import systemRoutes from './routes/system.js';
 import mealplansRoutes from './routes/mealplans.js';
+import analyzeRoutes from './routes/analyze.js';
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -32,10 +33,10 @@ const PORT = process.env.API_PORT || 3001;
 // Middleware
 // ──────────────────────────────────────────────
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
+  origin: true, // Allow all origins (Expo mobile + Cloudflare tunnel + localhost)
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // Health check (no auth required)
 app.get('/api/health', (req, res) => {
@@ -57,6 +58,7 @@ app.use('/api', appointmentsRoutes);        // Handles /api/residents/:id/appoin
 app.use('/api', emotionsRoutes);            // Handles /api/emotions and /api/residents/:id/emotions
 app.use('/api/system/components', systemRoutes);
 app.use('/api', mealplansRoutes);              // Handles /api/residents/:id/meal-plan
+app.use('/api', analyzeRoutes);                // Handles /api/analyze-prescription
 
 // ──────────────────────────────────────────────
 // Error Handling
@@ -89,7 +91,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`\n🚀 API server running at http://localhost:${PORT}`);
     console.log(`   Health check: http://localhost:${PORT}/api/health`);
-    console.log(`   CORS origins: localhost:5173, localhost:5174, localhost:3000\n`);
+    console.log(`   CORS origins: all (Cloudflare tunnel + Expo mobile)\n`);
   });
 }
 

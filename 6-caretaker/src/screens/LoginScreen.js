@@ -32,7 +32,14 @@ const LoginScreen = ({ navigation }) => {
       });
 
       if (!userRes.ok) {
-        throw new Error("Unable to verify user profile.");
+        // User authenticated via Firebase but has no record in the system
+        await signOut(auth);
+        Alert.alert(
+          "Account Not Found",
+          "Your Firebase account is not linked to a caretaker profile. Caretaker accounts are provisioned by administrators."
+        );
+        setLoading(false);
+        return;
       }
 
       const userData = await userRes.json();
@@ -49,7 +56,14 @@ const LoginScreen = ({ navigation }) => {
       navigation.replace('Dashboard');
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert("Login Failed", "Invalid email or password.");
+      const msg = error?.code === 'auth/invalid-credential'
+        ? 'Incorrect email or password. Please check and try again.'
+        : error?.code === 'auth/user-not-found'
+        ? 'No account found with this email.'
+        : error?.code === 'auth/too-many-requests'
+        ? 'Too many failed attempts. Please try again later.'
+        : error?.message || 'An unexpected error occurred.';
+      Alert.alert("Login Failed", msg);
     } finally {
       setLoading(false);
     }

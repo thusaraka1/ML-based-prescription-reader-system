@@ -28,6 +28,8 @@ const LoginScreen = ({ navigation }) => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
+      let userData;
+      
       if (!response.ok) {
         // Fallback for default admin
         if (email.trim().toLowerCase() === 'admin@careconnect.com') {
@@ -35,10 +37,38 @@ const LoginScreen = ({ navigation }) => {
           Alert.alert("Access Denied", "This application is restricted to Patients only.");
           return;
         }
-        throw new Error("Could not verify your account profile.");
+        
+        // User exists in Firebase but not in MySQL — auto-create a patient profile
+        console.log('[Login] User not found in DB, auto-creating patient profile...');
+        const residentId = `R-${user.uid.slice(0, 8).toUpperCase()}`;
+        
+        // Create resident record
+        await fetch('https://api.careconnect.website/api/residents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ residentId, name: user.displayName || email.split('@')[0] }),
+        });
+        
+        // Create user record
+        const createRes = await fetch('https://api.careconnect.website/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            uid: user.uid,
+            name: user.displayName || email.split('@')[0],
+            email: email.trim().toLowerCase(),
+            role: 'patient',
+            residentId,
+          }),
+        });
+        
+        if (!createRes.ok) {
+          throw new Error("Could not create your patient profile. Please try registering instead.");
+        }
+        userData = { role: 'patient' };
+      } else {
+        userData = await response.json();
       }
-      
-      const userData = await response.json();
       
       // Strict role enforcement
       if (userData.role !== 'patient') {
@@ -50,7 +80,14 @@ const LoginScreen = ({ navigation }) => {
       navigation.replace('Dashboard');
     } catch (error) {
       console.error("Login error:", error);
-      Alert.alert("Login Failed", "Invalid email or password.");
+      const msg = error?.code === 'auth/invalid-credential'
+        ? 'Incorrect email or password. Please check and try again.'
+        : error?.code === 'auth/user-not-found'
+        ? 'No account found with this email. Please register first.'
+        : error?.code === 'auth/too-many-requests'
+        ? 'Too many failed attempts. Please try again later.'
+        : error?.message || 'An unexpected error occurred.';
+      Alert.alert("Login Failed", msg);
     }
   };
 

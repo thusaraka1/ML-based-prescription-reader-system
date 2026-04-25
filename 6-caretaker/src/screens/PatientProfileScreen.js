@@ -9,12 +9,67 @@ const PatientProfileScreen = ({ route, navigation }) => {
 
   const [activeTab, setActiveTab] = useState('meds');
 
-  const medications = [
-    { id: 1, name: 'Metformin', dosage: '500 mg', frequency: 'twice daily', done: false },
-    { id: 2, name: 'Atorvastatin', dosage: '10 mg', frequency: 'at night', done: true },
-    { id: 3, name: 'Losartan', dosage: '50 mg', frequency: 'twice daily', done: false },
-    { id: 4, name: 'Thyroxine', dosage: '0.8 mg', frequency: 'at night', done: false }
-  ];
+  // State variables for real data
+  const [residentDetails, setResidentDetails] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    const fetchResidentDetails = async () => {
+      try {
+        const { auth } = require('../firebase/config');
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`https://api.careconnect.website/api/residents/${patient.resident_id || patient.id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch details');
+        const data = await res.json();
+        setResidentDetails(data);
+      } catch (err) {
+        console.error('Fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchResidentDetails();
+  }, [patient]);
+
+  // Extract medications from prescriptions
+  const medications = [];
+  if (residentDetails?.prescriptions) {
+    residentDetails.prescriptions.forEach(rx => {
+      if (rx.medications) {
+        rx.medications.forEach(med => {
+          medications.push({ ...med, prescription_id: rx.prescription_id });
+        });
+      }
+    });
+  }
+
+  const handleFinishMedication = async (med) => {
+    try {
+      const { auth } = require('../firebase/config');
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch(`https://api.careconnect.website/api/prescriptions/${med.prescription_id}/medications`, {
+        method: 'DELETE',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ medicationId: med.id })
+      });
+      if (!res.ok) throw new Error('Failed to finish medication');
+      
+      // Optimistically update UI by refetching
+      const refreshRes = await fetch(`https://api.careconnect.website/api/residents/${patient.resident_id || patient.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await refreshRes.json();
+      setResidentDetails(data);
+    } catch (err) {
+      console.error(err);
+      alert('Error marking medication as finished');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -58,13 +113,13 @@ const PatientProfileScreen = ({ route, navigation }) => {
             style={[styles.tab, activeTab === 'meds' && styles.tabActive]}
             onPress={() => setActiveTab('meds')}
           >
-            <Text style={[styles.tabText, activeTab === 'meds' && styles.tabTextActive]}>Meds (4)</Text>
+            <Text style={[styles.tabText, activeTab === 'meds' && styles.tabTextActive]}>Meds ({medications.length})</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'history' && styles.tabActive]}
             onPress={() => setActiveTab('history')}
           >
-            <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>History (0)</Text>
+            <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>History ({residentDetails?.finishedMedications?.length || 0})</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'diet' && styles.tabActive]}
@@ -78,16 +133,18 @@ const PatientProfileScreen = ({ route, navigation }) => {
         <View style={styles.tabContent}>
           {activeTab === 'meds' && (
             <View>
+              {medications.length === 0 && <Text style={styles.emptyText}>No active medications.</Text>}
               {medications.map((med) => (
                 <View key={med.id} style={styles.medCard}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.medName}>{med.name}</Text>
+                    <Text style={styles.medName}>{med.drug_name}</Text>
                     <Text style={styles.medDetails}>{med.dosage} • {med.frequency}</Text>
                   </View>
-                  <TouchableOpacity style={[styles.finishBtn, med.done && styles.finishBtnDone]}>
-                    <Text style={[styles.finishText, med.done && styles.finishTextDone]}>
-                      {med.done ? 'Finished' : 'Finish Medication'}
-                    </Text>
+                  <TouchableOpacity 
+                    style={styles.finishBtn}
+                    onPress={() => handleFinishMedication(med)}
+                  >
+                    <Text style={styles.finishText}>Finish</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -95,9 +152,23 @@ const PatientProfileScreen = ({ route, navigation }) => {
           )}
 
           {activeTab === 'history' && (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="history" size={48} color="#CBD5E1" />
-              <Text style={styles.emptyText}>No history available.</Text>
+            <View>
+              {(!residentDetails?.finishedMedications || residentDetails.finishedMedications.length === 0) ? (
+                <View style={styles.emptyState}>
+                  <MaterialCommunityIcons name="history" size={48} color="#CBD5E1" />
+                  <Text style={styles.emptyText}>No history available.</Text>
+                </View>
+              ) : (
+                residentDetails.finishedMedications.map((historyItem) => (
+                  <View key={historyItem.id} style={styles.medCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.medName}>{historyItem.drug_name}</Text>
+                      <Text style={styles.medDetails}>Finished: {new Date(historyItem.finished_at).toLocaleString()}</Text>
+                    </View>
+                    <MaterialCommunityIcons name="check-circle" size={24} color="#10B981" />
+                  </View>
+                ))
+              )}
             </View>
           )}
 
@@ -112,18 +183,29 @@ const PatientProfileScreen = ({ route, navigation }) => {
         {/* Emotional Wellness Section */}
         <View style={styles.wellnessSection}>
           <Text style={styles.sectionTitle}>Emotional Wellness</Text>
-          <View style={styles.wellnessCard}>
-            <View style={styles.emotionIcon}>
-              <MaterialCommunityIcons name="emoticon-happy-outline" size={32} color="#10B981" />
+          
+          {residentDetails?.emotionalStates && residentDetails.emotionalStates.length > 0 ? (
+            <View style={styles.wellnessCard}>
+              <View style={styles.emotionIcon}>
+                <MaterialCommunityIcons 
+                  name={residentDetails.emotionalStates[0].emotion_label === 'Happy' ? 'emoticon-happy-outline' : 
+                        residentDetails.emotionalStates[0].emotion_label === 'Sad' ? 'emoticon-sad-outline' : 
+                        'emoticon-neutral-outline'} 
+                  size={32} 
+                  color={residentDetails.emotionalStates[0].emotion_label === 'Happy' ? '#10B981' : '#F59E0B'} 
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.wellnessStatus}>Feeling {residentDetails.emotionalStates[0].emotion_label}</Text>
+                <Text style={styles.wellnessTime}>{new Date(residentDetails.emotionalStates[0].recorded_at).toLocaleString()}</Text>
+              </View>
+              <TouchableOpacity style={styles.viewLogBtn}>
+                <Text style={styles.viewLogText}>View Log</Text>
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.wellnessStatus}>Feeling Good</Text>
-              <Text style={styles.wellnessTime}>Logged 2 hours ago</Text>
-            </View>
-            <TouchableOpacity style={styles.viewLogBtn}>
-              <Text style={styles.viewLogText}>View Log</Text>
-            </TouchableOpacity>
-          </View>
+          ) : (
+            <Text style={styles.emptyText}>No wellness logs recorded.</Text>
+          )}
         </View>
 
       </ScrollView>

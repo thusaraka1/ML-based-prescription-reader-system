@@ -4,13 +4,56 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const PatientListScreen = ({ navigation }) => {
-  // Mock data for assigned patients
-  const patients = [
-    { id: '1', name: 'Kalani', status: 'critical', room: '101', age: 72, condition: 'Post-Surgery' },
-    { id: '2', name: 'David', status: 'stable', room: '104', age: 68, condition: 'Hypertension' },
-    { id: '3', name: 'Sarah', status: 'stable', room: '105', age: 81, condition: 'Diabetes Type II' },
-    { id: '4', name: 'Michael', status: 'warning', room: '202', age: 75, condition: 'Arrhythmia' }
-  ];
+  const [patients, setPatients] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  
+  React.useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        const { auth } = require('../firebase/config');
+        const user = auth.currentUser;
+        if (!user) return;
+        
+        const token = await user.getIdToken();
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        // 1. Fetch Caretaker Info
+        const ctRes = await fetch(`https://api.careconnect.website/api/caretakers/${user.uid}`, { headers });
+        if (!ctRes.ok) throw new Error('Failed to fetch caretaker info');
+        const ctData = await ctRes.json();
+
+        // 2. Fetch all residents and filter by assigned
+        const resRes = await fetch('https://api.careconnect.website/api/residents', { headers });
+        if (!resRes.ok) throw new Error('Failed to fetch residents');
+        const allResidents = await resRes.json();
+
+        const assignedIds = ctData.assigned_residents || [];
+        const assignedResidents = allResidents.filter(r => assignedIds.includes(r.resident_id)).map(r => ({
+          id: r.resident_id,
+          name: r.name,
+          room: r.room_number || 'TBD',
+          age: r.age || 'N/A',
+          status: 'stable',
+          condition: r.medical_history || 'N/A',
+          raw: r // store raw data to pass to profile
+        }));
+
+        setPatients(assignedResidents);
+      } catch (err) {
+        console.error('Error fetching patient list:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPatients();
+  }, []);
+
+  const filteredPatients = patients.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.room.toString().includes(searchQuery)
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -28,15 +71,17 @@ const PatientListScreen = ({ navigation }) => {
           style={styles.searchInput}
           placeholder="Search by name or room..."
           placeholderTextColor="#9CA3AF"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
         />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        {patients.map(p => (
+        {filteredPatients.map(p => (
           <TouchableOpacity 
             key={p.id} 
             style={styles.patientCard}
-            onPress={() => navigation.navigate('PatientProfile', { patient: p })}
+            onPress={() => navigation.navigate('PatientProfile', { patient: p.raw || p })}
           >
             <View style={[styles.statusIndicator, 
               p.status === 'critical' ? { backgroundColor: '#E11D48' } : 

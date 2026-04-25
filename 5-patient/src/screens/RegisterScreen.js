@@ -97,7 +97,15 @@ const RegisterScreen = ({ navigation }) => {
       navigation.replace('Dashboard');
     } catch (error) {
       console.error("Registration error:", error);
-      Alert.alert("Registration Failed", error.message || "An unexpected error occurred.");
+      let msg = error?.message || "An unexpected error occurred.";
+      if (error?.code === 'auth/email-already-in-use') {
+        msg = 'An account with this email already exists. Please sign in instead.';
+      } else if (error?.code === 'auth/weak-password') {
+        msg = 'Password is too weak. Please use at least 6 characters.';
+      } else if (error?.code === 'auth/invalid-email') {
+        msg = 'Please enter a valid email address.';
+      }
+      Alert.alert("Registration Failed", msg);
     }
   };
 

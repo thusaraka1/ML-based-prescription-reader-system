@@ -1,11 +1,138 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 
 const UploadRxScreen = ({ navigation }) => {
   const [doctorName, setDoctorName] = useState('');
   const [uploadMethod, setUploadMethod] = useState('file'); // 'file' or 'camera'
+  const [imageUri, setImageUri] = useState(null);
+  const [imageBase64, setImageBase64] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [extractedData, setExtractedData] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handlePickImage = async () => {
+    let result;
+    if (uploadMethod === 'file') {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true,
+      });
+    } else {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+      result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true,
+      });
+    }
+
+    if (!result.canceled) {
+      setImageUri(result.assets[0].uri);
+      setImageBase64(result.assets[0].base64);
+      setExtractedData(null);
+      handleAnalyze(result.assets[0].base64);
+    }
+  };
+
+  const handleAnalyze = async (base64) => {
+    setIsAnalyzing(true);
+    try {
+      const { auth } = require('../firebase/config');
+      const user = auth.currentUser;
+      const token = user ? await user.getIdToken() : '';
+
+      const res = await fetch('https://api.careconnect.website/api/analyze-prescription', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ image: base64 })
+      });
+      
+      if (!res.ok) throw new Error('Ensemble Server Error');
+      const data = await res.json();
+      
+      // Update data to format expected by UI
+      setExtractedData({
+        raw_text: data.raw_text,
+        medications: data.medications
+      });
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Analysis Failed', 'Could not extract prescription data.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!extractedData) {
+      Alert.alert('Error', 'Please upload and analyze a prescription first.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { auth } = require('../firebase/config');
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not authenticated');
+
+      const token = await user.getIdToken();
+      
+      // Look up the user's resident_id from the backend
+      let residentId = `R-${user.uid.slice(0, 8).toUpperCase()}`;
+      try {
+        const userRes = await fetch(`https://api.careconnect.website/api/users/${user.uid}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          if (userData.resident_id) residentId = userData.resident_id;
+        }
+      } catch (e) {
+        console.warn('Could not fetch user profile, using default resident ID');
+      }
+      
+      const payload = {
+        prescriptionId: `RX-${Date.now()}`,
+        residentId,
+        dateIssued: new Date().toISOString().split('T')[0],
+        doctorName: doctorName || 'Unknown Doctor',
+        medications: extractedData.medications || []
+      };
+
+      const res = await fetch('https://api.careconnect.website/api/prescriptions', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to save prescription');
+      }
+      Alert.alert('Success', 'Prescription saved successfully!', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Submission Failed', err.message || 'Could not save the prescription.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -68,17 +195,23 @@ const UploadRxScreen = ({ navigation }) => {
             </View>
 
             {/* Upload Area */}
-            <TouchableOpacity style={styles.uploadArea}>
-              <MaterialCommunityIcons 
-                name={uploadMethod === 'file' ? "file-document-outline" : "camera-plus"} 
-                size={56} 
-                color="#CBD5E1" 
-                style={{ marginBottom: 12 }}
-              />
-              <Text style={styles.uploadMainText}>
-                {uploadMethod === 'file' ? 'Click to upload' : 'Click to take photo'}
-              </Text>
-              <Text style={styles.uploadSubText}>PNG, JPG up to 10MB</Text>
+            <TouchableOpacity style={styles.uploadArea} onPress={handlePickImage}>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={{ width: '100%', height: 200, borderRadius: 12 }} resizeMode="cover" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons 
+                    name={uploadMethod === 'file' ? "file-document-outline" : "camera-plus"} 
+                    size={56} 
+                    color="#CBD5E1" 
+                    style={{ marginBottom: 12 }}
+                  />
+                  <Text style={styles.uploadMainText}>
+                    {uploadMethod === 'file' ? 'Click to upload' : 'Click to take photo'}
+                  </Text>
+                  <Text style={styles.uploadSubText}>PNG, JPG up to 10MB</Text>
+                </>
+              )}
             </TouchableOpacity>
 
             {/* Banner */}
@@ -90,64 +223,74 @@ const UploadRxScreen = ({ navigation }) => {
               </Text>
             </View>
 
-            {/* Mock Extracted Text Display */}
-            <View style={styles.extractedTextContainer}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                <MaterialCommunityIcons name="file-document-outline" size={18} color="#1E3A8A" />
-                <Text style={styles.extractedTextTitle}> Extracted Text</Text>
+            {/* Analysis State */}
+            {isAnalyzing && (
+              <View style={{ alignItems: 'center', marginTop: 32 }}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <Text style={{ marginTop: 12, color: '#1D4ED8', fontWeight: '600' }}>Analyzing Prescription via Donut ML...</Text>
               </View>
-              <View style={styles.extractedTextBg}>
-                <Text style={styles.extractedTextContent}>
-                  Patient: Kalani{'\n'}
-                  Rx: Amoxicillin 500mg, Take 1 tablet twice daily.{'\n'}
-                  Ibuprofen 200mg, As needed for pain.
-                </Text>
-              </View>
-            </View>
+            )}
 
-            {/* Mock Extracted Medications Display */}
-            <View style={styles.medicationsContainer}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <MaterialCommunityIcons name="pill" size={18} color="#065F46" />
-                  <Text style={styles.medicationsTitle}> Extracted Medications</Text>
-                </View>
-                <View style={styles.verifiedBadge}>
-                  <Text style={styles.verifiedBadgeText}>🧠 Ensemble Verified</Text>
-                </View>
-              </View>
-
-              <View style={styles.medicationCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="pill" size={20} color="#059669" style={{ marginRight: 12 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.medDrugName}>Amoxicillin</Text>
-                    <Text style={styles.medDosage}>500mg — Take 1 tablet twice daily</Text>
+            {/* Extracted Data Display */}
+            {extractedData && (
+              <>
+                <View style={styles.extractedTextContainer}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                    <MaterialCommunityIcons name="file-document-outline" size={18} color="#1E3A8A" />
+                    <Text style={styles.extractedTextTitle}> Raw Extracted Text</Text>
                   </View>
-                  <Text style={styles.medConfidence}>98%</Text>
-                </View>
-              </View>
-
-              <View style={styles.medicationCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <MaterialCommunityIcons name="pill" size={20} color="#059669" style={{ marginRight: 12 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.medDrugName}>Ibuprofen</Text>
-                    <Text style={styles.medDosage}>200mg — As needed for pain</Text>
+                  <View style={styles.extractedTextBg}>
+                    <Text style={styles.extractedTextContent}>
+                      {extractedData.raw_text || "No text extracted."}
+                    </Text>
                   </View>
-                  <Text style={styles.medConfidence}>95%</Text>
                 </View>
-              </View>
-            </View>
+
+                <View style={styles.medicationsContainer}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <MaterialCommunityIcons name="pill" size={18} color="#065F46" />
+                      <Text style={styles.medicationsTitle}> Parsed Medications</Text>
+                    </View>
+                    <View style={styles.verifiedBadge}>
+                      <Text style={styles.verifiedBadgeText}>🧠 Ensemble Verified</Text>
+                    </View>
+                  </View>
+
+                  {(extractedData.medications || []).map((med, index) => {
+                    const dosageText = med.dosage || 'No dosage specified';
+                    const freqText = med.frequency || 'As directed';
+                    const confPct = med.confidence ? `${Math.round(med.confidence * 100)}%` : '—';
+                    return (
+                    <View key={index} style={styles.medicationCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        <MaterialCommunityIcons name="pill" size={20} color="#059669" style={{ marginRight: 12 }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.medDrugName}>{med.drugName}</Text>
+                          <Text style={styles.medDosage}>{dosageText} — {freqText}</Text>
+                        </View>
+                        <Text style={styles.medConfidence}>{confPct}</Text>
+                      </View>
+                    </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
           </View>
         </ScrollView>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <TouchableOpacity style={styles.submitBtn}>
+          <TouchableOpacity 
+            style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
+            onPress={handleSubmit}
+          >
             <MaterialCommunityIcons name="check-circle-outline" size={24} color="#FFF" style={{ marginRight: 8 }} />
-            <Text style={styles.submitBtnText}>Confirm & Save</Text>
+            <Text style={styles.submitBtnText}>
+              {isSubmitting ? 'Saving...' : 'Confirm & Save'}
+            </Text>
           </TouchableOpacity>
         </View>
 

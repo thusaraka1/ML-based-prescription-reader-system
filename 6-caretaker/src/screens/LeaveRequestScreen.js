@@ -8,18 +8,51 @@ const LeaveRequestScreen = ({ navigation }) => {
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
 
-  const handleSubmit = () => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
     if (!startDate || !endDate || !reason) {
       Alert.alert('Missing Fields', 'Please fill out all fields before submitting.');
       return;
     }
     
-    // In a real app, this would hit caretakersApi.createLeaveRequest
-    Alert.alert(
-      'Leave Request Submitted', 
-      'Your request has been sent to the system administrator for approval.',
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
-    );
+    setIsSubmitting(true);
+    try {
+      const { auth } = require('../firebase/config');
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not authenticated');
+
+      const token = await user.getIdToken();
+      
+      const payload = {
+        startDate,
+        endDate,
+        reason,
+        caretakerName: user.displayName || 'Caretaker'
+      };
+
+      const res = await fetch(`https://api.careconnect.website/api/caretakers/${user.uid}/leave-requests`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('Failed to submit leave request');
+      
+      Alert.alert(
+        'Leave Request Submitted', 
+        'Your request has been sent to the system administrator for approval.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Could not submit leave request. Please try again later.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -93,12 +126,12 @@ const LeaveRequestScreen = ({ navigation }) => {
         {/* Footer */}
         <View style={styles.footer}>
           <TouchableOpacity 
-            style={[styles.submitBtn, (!startDate || !endDate || !reason) && styles.submitBtnDisabled]} 
+            style={[styles.submitBtn, (!startDate || !endDate || !reason || isSubmitting) && styles.submitBtnDisabled]} 
             onPress={handleSubmit}
-            disabled={!startDate || !endDate || !reason}
+            disabled={!startDate || !endDate || !reason || isSubmitting}
           >
             <MaterialCommunityIcons name="send" size={20} color="#FFF" style={{ marginRight: 8 }} />
-            <Text style={styles.submitBtnText}>Submit Request</Text>
+            <Text style={styles.submitBtnText}>{isSubmitting ? 'Submitting...' : 'Submit Request'}</Text>
           </TouchableOpacity>
         </View>
 

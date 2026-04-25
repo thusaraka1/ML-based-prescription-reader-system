@@ -12,12 +12,50 @@ const DashboardScreen = ({ navigation }) => {
     { id: 2, type: 'warning', message: 'David missed afternoon medication.', time: '10 mins ago' }
   ];
 
-  // Mock data for assigned patients
-  const patients = [
-    { id: '1', name: 'Kalani', status: 'critical', room: '101' },
-    { id: '2', name: 'David', status: 'stable', room: '104' },
-    { id: '3', name: 'Sarah', status: 'stable', room: '105' }
-  ];
+  const [caretakerName, setCaretakerName] = React.useState('Caretaker');
+  const [patients, setPatients] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+        
+        const token = await user.getIdToken();
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        // 1. Fetch Caretaker Info (includes assigned_residents array)
+        const ctRes = await fetch(`https://api.careconnect.website/api/caretakers/${user.uid}`, { headers });
+        if (!ctRes.ok) throw new Error('Failed to fetch caretaker info');
+        const ctData = await ctRes.json();
+        setCaretakerName(ctData.name.split(' ')[0] || 'Caretaker'); // First name
+
+        // 2. Fetch all residents and filter by assigned
+        const resRes = await fetch('https://api.careconnect.website/api/residents', { headers });
+        if (!resRes.ok) throw new Error('Failed to fetch residents');
+        const allResidents = await resRes.json();
+
+        const assignedIds = ctData.assigned_residents || [];
+        const assignedResidents = allResidents.filter(r => assignedIds.includes(r.resident_id)).map(r => ({
+          id: r.resident_id,
+          name: r.name,
+          room: r.room_number || 'TBD',
+          age: r.age || 'N/A',
+          status: 'stable', // We can derive this later if needed
+          raw: r // store raw data to pass to profile
+        }));
+
+        setPatients(assignedResidents);
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
 
   const handleLeave = () => {
     navigation.navigate('LeaveRequest');
@@ -39,7 +77,7 @@ const DashboardScreen = ({ navigation }) => {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.name}>Caretaker</Text>
+          <Text style={styles.name}>{caretakerName}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity style={styles.leaveBtn} onPress={handleLeave}>
@@ -100,7 +138,7 @@ const DashboardScreen = ({ navigation }) => {
               <TouchableOpacity 
                 key={p.id} 
                 style={styles.patientCard}
-                onPress={() => navigation.navigate('PatientProfile', { patient: p })}
+                onPress={() => navigation.navigate('PatientProfile', { patient: p.raw || p })}
               >
                 <View style={[styles.statusIndicator, p.status === 'critical' ? { backgroundColor: '#E11D48' } : { backgroundColor: '#10B981' }]} />
                 <View style={styles.patientAvatar}>

@@ -1,0 +1,91 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────
+# Named volumes for persistent storage
+# ─────────────────────────────────────────────
+volumes:
+  mysql_data:          # MySQL database files
+  model_cache:         # Hugging Face model weights (avoids re-download)
+
+# ─────────────────────────────────────────────
+# Custom network — services talk by service name
+# ─────────────────────────────────────────────
+networks:
+  careconnect_net:
+    driver: bridge
+
+# ─────────────────────────────────────────────
+# Services
+# ─────────────────────────────────────────────
+services:
+
+  # ── 1. MySQL Database ───────────────────────
+  mysql:
+    image: mysql:8.0          # minimal official image
+    container_name: careconnect_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+    volumes:
+      - mysql_data:/var/lib/mysql                          # persistent DB files
+      - ./4-system-engine/api/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro  # auto-init schema
+    networks:
+      - careconnect_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 2. Node.js Express API ──────────────────
+  api:
+    build:
+      context: ./4-system-engine/api
+      dockerfile: Dockerfile
+    container_name: careconnect_api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"            # expose to host for mobile apps
+    environment:
+      NODE_ENV:       production
+      MYSQL_HOST:     mysql    # service-name DNS (not localhost!)
+      MYSQL_PORT:     3306
+      MYSQL_USER:     root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      FIREBASE_SERVICE_ACCOUNT_KEY: ${FIREBASE_SERVICE_ACCOUNT_KEY}
+      GEMINI_API_KEY: ${VITE_GEMINI_API_KEY}
+      DONUT_API_URL:  http://donut:8000   # internal networking
+    depends_on:
+      mysql:
+        condition: service_healthy      # wait for DB to be ready
+    networks:
+      - careconnect_net
+
+  # ── 3. Python Donut ML Service ──────────────
+  donut:
+    build:
+      context: ./3-prescription-reader/server
+      dockerfile: Dockerfile
+    container_name: careconnect_donut
+    restart: unless-stopped
+    ports:
+      - "8000:8000"            # expose for direct frontend access
+    volumes:
+      - model_cache:/root/.cache/huggingface   # reuse downloaded weights
+      # Mount your fine-tuned model if stored locally:
+      # - ./3-prescription-reader/best_model:/app/best_model:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+      GEMINI_API_KEY:   ${VITE_GEMINI_API_KEY}
+    networks:
+      - careconnect_net
+    # GPU support — uncomment if you have an NVIDIA GPU + nvidia-container-toolkit
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
