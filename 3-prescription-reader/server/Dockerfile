@@ -1,6 +1,6 @@
 # ── Stage 1: Download and cache model weights ───────────────────────────────
 # Using a full Python image just for pip + heavy model download
-FROM python:3.11-slim AS model-downloader
+FROM python:3.11-slim-bookworm AS model-downloader
 
 WORKDIR /model-cache
 
@@ -14,12 +14,15 @@ from huggingface_hub import snapshot_download; \
 snapshot_download(repo_id='naver-clova-ix/donut-base', cache_dir='/model-cache')"
 
 # ── Stage 2: Runtime ────────────────────────────────────────────────────────
-FROM python:3.11-slim AS runner
+FROM python:3.11-slim-bookworm AS runner
 
 WORKDIR /app
 
 # System libraries needed by OpenCV and PyTorch
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN (sed -i 's/http:/https:/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true) && \
+    (sed -i 's/http:/https:/g' /etc/apt/sources.list 2>/dev/null || true) && \
+    apt-get update -o Acquire::ForceIPv4=true && \
+    apt-get install -y -o Acquire::ForceIPv4=true --no-install-recommends \
     libglib2.0-0 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*

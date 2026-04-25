@@ -25,15 +25,15 @@ services:
     container_name: careconnect_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-careconnect}
     volumes:
       - mysql_data:/var/lib/mysql                          # persistent DB files
       - ./4-system-engine/api/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro  # auto-init schema
     networks:
       - careconnect_net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-root}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,8 +52,8 @@ services:
       MYSQL_HOST:     mysql    # service-name DNS (not localhost!)
       MYSQL_PORT:     3306
       MYSQL_USER:     root
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-careconnect}
       FIREBASE_SERVICE_ACCOUNT_KEY: ${FIREBASE_SERVICE_ACCOUNT_KEY}
       GEMINI_API_KEY: ${VITE_GEMINI_API_KEY}
       DONUT_API_URL:  http://donut:8000   # internal networking
